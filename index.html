@@ -1,0 +1,91 @@
+<!DOCTYPE html><html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Sync Tool (Browser-Based)</title>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.9.7"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        input, button { margin: 10px; padding: 10px; font-size: 16px; }
+        #audioPlayer { display: block; margin: 20px auto; }
+        #downloadBtn { display: none; }
+    </style>
+</head>
+<body>
+    <h2>Audio Sync Tool (No Setup Required)</h2>
+    <p>Upload an audio file and an SRT file to sync them automatically.</p>
+    <input type="file" id="audioFile" accept="audio/*">
+    <input type="file" id="srtFile" accept=".srt">
+    <button onclick="syncAudio()">Sync Audio</button>
+    <audio id="audioPlayer" controls></audio>
+    <button id="downloadBtn" onclick="downloadSyncedAudio()">Download Synced Audio</button><script>
+    async function loadFFmpeg() {
+        const { createFFmpeg } = FFmpeg;
+        const ffmpeg = createFFmpeg({ log: true });
+        await ffmpeg.load();
+        return ffmpeg;
+    }
+
+    function parseSRT(srtText) {
+        const entries = srtText.split('\n\n');
+        for (let entry of entries) {
+            const lines = entry.split('\n');
+            if (lines.length < 2) continue;
+            const timecode = lines[1].split(' --> ')[0];
+            const [hours, minutes, seconds] = timecode.split(':');
+            return (parseInt(hours) * 3600) + (parseInt(minutes) * 60) + parseFloat(seconds.replace(',', '.'));
+        }
+        return 0; 
+    }
+
+    async function syncAudio() {
+        const audioFile = document.getElementById('audioFile').files[0];
+        const srtFile = document.getElementById('srtFile').files[0];
+        const audioPlayer = document.getElementById('audioPlayer');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        if (!audioFile || !srtFile) {
+            alert('Please upload both an audio and an SRT file!');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async function(event) {
+            const srtText = event.target.result;
+            const startTime = parseSRT(srtText);
+            if (startTime >= 0) {
+                const ffmpeg = await loadFFmpeg();
+                const inputFileName = 'input_audio.mp3';
+                const outputFileName = 'synced_audio.mp3';
+                
+                ffmpeg.FS('writeFile', inputFileName, await fetchFile(URL.createObjectURL(audioFile)));
+                await ffmpeg.run('-i', inputFileName, '-itsoffset', `-${startTime}`, '-c', 'copy', outputFileName);
+                const data = ffmpeg.FS('readFile', outputFileName);
+                const syncedAudioBlob = new Blob([data.buffer], { type: 'audio/mp3' });
+                const syncedAudioURL = URL.createObjectURL(syncedAudioBlob);
+                
+                audioPlayer.src = syncedAudioURL;
+                audioPlayer.dataset.audioUrl = syncedAudioURL;
+                audioPlayer.play();
+                downloadBtn.style.display = "block";
+            } else {
+                alert('Invalid SRT file or timestamps not found');
+            }
+        };
+        reader.readAsText(srtFile);
+    }
+
+    function downloadSyncedAudio() {
+        const audioPlayer = document.getElementById('audioPlayer');
+        const audioUrl = audioPlayer.dataset.audioUrl;
+        const a = document.createElement('a');
+        a.href = audioUrl;
+        a.download = 'synced_audio.mp3';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+</script>
+
+</body>
+</html>
