@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Audio Sync Tool (Browser-Based)</title>
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.9.7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@latest"></script>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
         input, button { margin: 10px; padding: 10px; font-size: 16px; }
@@ -20,10 +20,10 @@
     <audio id="audioPlayer" controls></audio>
     <button id="downloadBtn" onclick="downloadSyncedAudio()">Download Synced Audio</button><script>
     async function loadFFmpeg() {
-        const { createFFmpeg } = FFmpeg;
+        const { createFFmpeg, fetchFile } = FFmpeg;
         const ffmpeg = createFFmpeg({ log: true });
         await ffmpeg.load();
-        return ffmpeg;
+        return { ffmpeg, fetchFile };
     }
 
     function parseSRT(srtText) {
@@ -54,12 +54,12 @@
             const srtText = event.target.result;
             const startTime = parseSRT(srtText);
             if (startTime >= 0) {
-                const ffmpeg = await loadFFmpeg();
+                const { ffmpeg, fetchFile } = await loadFFmpeg();
                 const inputFileName = 'input_audio.mp3';
                 const outputFileName = 'synced_audio.mp3';
                 
-                ffmpeg.FS('writeFile', inputFileName, await fetchFile(URL.createObjectURL(audioFile)));
-                await ffmpeg.run('-i', inputFileName, '-itsoffset', `-${startTime}`, '-c', 'copy', outputFileName);
+                await ffmpeg.FS('writeFile', inputFileName, await fetchFile(audioFile));
+                await ffmpeg.run('-i', inputFileName, '-af', `adelay=${startTime * 1000}|${startTime * 1000}`, '-c:a', 'libmp3lame', outputFileName);
                 const data = ffmpeg.FS('readFile', outputFileName);
                 const syncedAudioBlob = new Blob([data.buffer], { type: 'audio/mp3' });
                 const syncedAudioURL = URL.createObjectURL(syncedAudioBlob);
